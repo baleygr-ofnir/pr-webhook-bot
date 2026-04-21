@@ -30,9 +30,9 @@ def webhook():
     if event_type not in valid_events:
         return "", 200
     
-    pr = event["resource"]
-    pr_id = pr["pullRequestId"]
-    repo_id = pr["repository", {}].get["id"]
+    pr = event.get("resource")
+    pr_id = pr.get("pullRequestId")
+    repo_id = pr.get("repository", {}).get("id")
     
     if not pr_id or not repo_id:
         return "", 400
