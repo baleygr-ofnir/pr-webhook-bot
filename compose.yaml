@@ -12,3 +12,9 @@ services:
       - "${HOST_PORT}:${CONTAINER_PORT}"
     security_opt:
       - no-new-privileges:true
+    networks:
+      - npm_proxy
+
+networks:
+  npm_proxy:
+    external: true
