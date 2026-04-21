@@ -1,0 +1,15 @@
+---
+services:
+  pr-webhook-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: azure-webhook-relay:latest
+    container_name: pr-webhook-relay
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${HOST_PORT}:${CONTAINER_PORT}"
+    security_opt:
+      - no-new-privileges:true
