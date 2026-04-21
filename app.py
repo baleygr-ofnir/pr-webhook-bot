@@ -8,20 +8,26 @@ load_dotenv()
 
 app = Flask(__name__)
 
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
-AZURE_PAT = base64.b64encode(f":{os.getenv('AZURE_PAT')}".encode()).decode()
-AZURE_ORG = os.getenv("AZURE_ORG")
-AZURE_PROJECT = os.getenv("AZURE_PROJECT")
+def get_required_env(key: str) -> str:
+    value = os.getenv(key)
+    if not value:
+        raise ValueError(f"Missing required environment variable: {key}")
+    return value
+
+DISCORD_WEBHOOK_URL = get_required_env("DISCORD_WEBHOOK_URL")
+AZURE_ORG = get_required_env("AZURE_ORG")
+AZURE_PROJECT = get_required_env("AZURE_PROJECT")
+raw_pat = get_required_env("AZURE_PAT")
+AZURE_PAT = base64.b64encode(f":{raw_pat}".encode()).decode()
 HEADERS = {"Authorization": f"Basic {AZURE_PAT}"}
 
 @app.route("/webhook", methods=["POST"])
-
 def webhook():
-    #AZURE DevOps calls this URL everytime a PR event happens
     event = request.get_json()
-
-    #If not pull request
-    if not event.get("eventType", "").startswith("git.pullrequest"):
+    event_type = event.get("eventType", "")
+    
+    valid_events = ["git.pullrequest.created", "git.pullrequest.updated"]
+    if event_type not in valid_events:
         return "", 200
     
     pr = event["resource"]
@@ -50,17 +56,20 @@ def webhook():
     # Check for conflicts
     has_conflicts = pr_detail.get("mergeStatus") == "conflicts"
 
-    send_discord_message(pr, change_count, has_conflicts)
+    send_discord_message(pr, change_count, has_conflicts, event_type)
     
     return "", 200
 
-def send_discord_message(pr, change_count, has_conflicts):
+def send_discord_message(pr, change_count, has_conflicts, event_type):
+    
+    # Determine if new or updated
+    is_updated = event_type == "git.pullrequest.updated"
+    title_prefix = "Pull Request Updated" if is_updated else "New Pull Request"
     
     # Create and sends the discord messages
-
     embed = {
-        "title": f"New Pull Request: {pr['title']}",
-        "color": 0xe74c3c if has_conflicts else 0x2ecc71,
+        "title": f"{title_prefix}: {pr['title']}",
+        "color": 0xe74c3c if has_conflicts else (0x3498db if is_updated else 0x2ecc71),
         "fields": [
             {
                 "name": "Author",
@@ -69,12 +78,12 @@ def send_discord_message(pr, change_count, has_conflicts):
             },
             {
                 "name": "From branch",
-                "value": pr["sourceRefName"].replace("refs/heads/", ""),
+                "value": pr["targetRefName"].replace("refs/heads/", ""),
                 "inline": True
             },
             {
                 "name": "Into branch",
-                "value": pr["sourceRefName"].replace("refs/heads/", ""),
+                "value": pr["targetRefName"].replace("refs/heads/", ""),
                 "inline": True
             },
             {
@@ -84,15 +93,13 @@ def send_discord_message(pr, change_count, has_conflicts):
             },
             {
                 "name": "Merge conflicts",
-                "value": "We got a conflict!!!" if has_conflicts else "All good!",
+                "value": "We got conflicts!!!" if has_conflicts else "All good!",
                 "inline": True
             },
         ],
-
         "timestamp": pr["creationDate"],
     }
 
     requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]})
-
 if __name__ == "__main__":
     app.run(port=3000, debug=True)
