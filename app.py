@@ -52,12 +52,26 @@ def webhook():
         
         if not (is_completion or is_push):
             return "", 200
-        
+
+    # 1. Fetch all iterations
     iterations_response = requests.get(
         f"{base_url}/pullRequests/{pr_id}/iterations?api-version=7.1",
         headers=HEADERS
     )
-    iterations = iterations_response.json() if iterations_response.ok else {}
+    iterations_list = iterations_response.json().get("value", []) if iterations_response.ok else {}
+
+    change_count = 0
+    if iterations_list:
+        last_iteration_id = iterations_list[-1].get("id")
+
+        # 2. Fetch actual file changes for that latest iteration
+        changes_response = requests.get(
+            f"{base_url}/pullRequests/{pr_id}/iterations/{last_iteration_id}/changes?api-version=7.1",
+            headers=HEADERS
+        )
+        if changes_response.ok:
+            changes_data = changes_response.json()
+            change_count = len(changes_data.get("changeEntries", []))
 
     pr_detail_response = requests.get(
         f"{base_url}/pullRequests/{pr_id}?api-version=7.1",
@@ -65,20 +79,14 @@ def webhook():
     )
     pr_detail = pr_detail_response.json() if pr_detail_response.ok else {}
 
-    # Number of files changed in the request
-    latest_iteration = iterations.get("value", [{}])[-1]
-    change_count = len(latest_iteration.get("changeList", []))
-
     # Check for conflicts
     has_conflicts = pr_detail.get("mergeStatus") == "conflicts"
-
 
     send_discord_message(pr, change_count, has_conflicts, event_type, update_reason)
     
     return "", 200
 
 def send_discord_message(pr, change_count, has_conflicts, event_type, update_reason=None):
-    
     # Determine if new or updated
     is_updated = event_type == "git.pullrequest.updated"
     title_prefix = "Pull Request Updated" if is_updated else "New Pull Request"
