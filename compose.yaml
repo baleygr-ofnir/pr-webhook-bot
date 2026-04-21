@@ -4,7 +4,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: azure-webhook-relay:latest
     container_name: pr-webhook-relay
     restart: unless-stopped
     env_file:
