@@ -30,7 +30,7 @@ def webhook():
     if event_type not in valid_events:
         return "", 200
     
-    pr = event.get("resource")
+    pr = event.get("resource", {})
     pr_id = pr.get("pullRequestId")
     repo_id = pr.get("repository", {}).get("id")
     
@@ -42,11 +42,22 @@ def webhook():
         f"/_apis/git/repositories/{repo_id}"
     )
 
-    #Pull request details
-    iterations = requests.get(
+    update_reason = None
+    if event_type == "git.pullrequest.updated":
+        update_reason = event.get("message", {}).get("text", "Pull request was updated.")
+        
+        reason_lower = update_reason.lower()
+        is_completion = "completed pull request" in reason_lower
+        is_push = "pushed" in reason_lower
+        
+        if not (is_completion or is_push):
+            return "", 200
+        
+    iterations_response = requests.get(
         f"{base_url}/pullRequests/{pr_id}/iterations?api-version=7.1",
         headers=HEADERS
-    ).json()
+    )
+    iterations = iterations_response.json() if iterations_response.ok else {}
 
     pr_detail_response = requests.get(
         f"{base_url}/pullRequests/{pr_id}?api-version=7.1",
@@ -61,9 +72,6 @@ def webhook():
     # Check for conflicts
     has_conflicts = pr_detail.get("mergeStatus") == "conflicts"
 
-    update_reason = None
-    if event_type == "git.pullrequest.updated":
-        update_reason = event.get("message", {}).get("text", "Pull request was updated.")
 
     send_discord_message(pr, change_count, has_conflicts, event_type, update_reason)
     
