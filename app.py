@@ -119,5 +119,6 @@ def send_discord_message(pr, change_count, has_conflicts, event_type, update_rea
     }
 
     requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]})
+    
 if __name__ == "__main__":
     app.run(port=3000, debug=True)
