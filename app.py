@@ -26,7 +26,11 @@ def webhook():
     event = request.get_json()
     event_type = event.get("eventType", "")
     
-    valid_events = ["git.pullrequest.created", "git.pullrequest.updated"]
+    valid_events = [
+        "git.pullrequest.created",
+        "git.pullrequest.updated",
+        "git.pullrequest.merged"
+    ]
     if event_type not in valid_events:
         return "", 200
     
@@ -41,17 +45,6 @@ def webhook():
         f"https://dev.azure.com/{AZURE_ORG}/{AZURE_PROJECT}"
         f"/_apis/git/repositories/{repo_id}"
     )
-
-    update_reason = None
-    if event_type == "git.pullrequest.updated":
-        update_reason = event.get("message", {}).get("text", "Pull request was updated.")
-        
-        reason_lower = update_reason.lower()
-        is_completion = "completed pull request" in reason_lower
-        is_push = "pushed" in reason_lower
-        
-        if not (is_completion or is_push):
-            return "", 200
 
     # 1. Fetch all iterations
     iterations_response = requests.get(
@@ -82,16 +75,33 @@ def webhook():
     # Check for conflicts
     has_conflicts = pr_detail.get("mergeStatus") == "conflicts"
 
+    update_reason = event.get("message", {}).get("text", "Pull request event triggered.")
+
     send_discord_message(pr, change_count, has_conflicts, event_type, update_reason)
     
     return "", 200
 
-def send_discord_message(pr, change_count, has_conflicts, event_type, update_reason=None):
+def send_discord_message(pr, change_count, has_conflicts, event_type, update_reason):
     # Determine if new or updated
+    is_completion = event_type == "git.pullrequest.merged"
     is_updated = event_type == "git.pullrequest.updated"
-    title_prefix = "Pull Request Updated" if is_updated else "New Pull Request"
-   
+
+    if is_completion:
+        title_prefix = "Pull Request Completed"
+        color = 0x9b59b6
+    elif is_updated:
+        title_prefix = "Pull Request Updated"
+        color = 0x3498db
+    else:
+        title_prefix = "New Pull Request"
+        color = 0x2ecc71
+
     fields = [
+        {
+            "name": "Event Details",
+            "value": update_reason,
+            "inline": False
+        },
         {
             "name": "Author",
             "value": pr.get("createdBy", {}).get("displayName", "Unknown"),
@@ -118,18 +128,11 @@ def send_discord_message(pr, change_count, has_conflicts, event_type, update_rea
             "inline": True
         },
     ] 
-    
-    if is_updated and update_reason:
-        fields.insert(0, {
-            "name": "Update Details",
-            "value": update_reason,
-            "inline": False
-        })
-    
+
     # Create and sends the discord messages
     embed = {
         "title": f"{title_prefix}: {pr.get('title', 'Unknown Title')}",
-        "color": 0xe74c3c if has_conflicts else (0x3498db if is_updated else 0x2ecc71),
+        "color": color,
         "fields": fields,
         "timestamp": pr.get("creationDate"),
     }
